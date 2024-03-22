@@ -66,14 +66,14 @@ python preprocess/split.py
 ```bash
 # Fine-tuning from our pre-trained checkpoint
 # Replace YOUR_WANDB_ENTITY and YOUR_WANDB_PROJECT
-CUDA_VISIBLE_DEVICES=1 python fam/llm/train.py --num_gpus 1 --batch_size 32 --per_gpu_batchsize 2 --max_epoch 5 --learning_rate 0.00005 --data_dir data --exp_name reazon_small_exp_finetuning --spkemb_dropout 0.1 --check_val_every_n_epoch 1 --wandb_entity YOUR_WANDB_ENTITY --wandb_project YOUR_WANDB_PROJECT --use_wandb
+python fam/llm/train.py --num_gpus 1 --batch_size 32 --per_gpu_batchsize 2 --max_epoch 5 --learning_rate 0.00005 --data_dir data --exp_name reazon_small_exp_finetuning --spkemb_dropout 0.1 --check_val_every_n_epoch 1 --wandb_entity YOUR_WANDB_ENTITY --wandb_project YOUR_WANDB_PROJECT --use_wandb
 
 # Multi-GPU Fine-tuning (e.g., using 2 GPUs)
 # Replace YOUR_WANDB_ENTITY and YOUR_WANDB_PROJECT
 python fam/llm/train.py --num_gpus 2 --batch_size 32 --per_gpu_batchsize 2 --max_epoch 5 --learning_rate 0.00005 --data_dir data --exp_name reazon_small_exp_finetuning --spkemb_dropout 0.1 --check_val_every_n_epoch 1 --wandb_entity YOUR_WANDB_ENTITY --wandb_project YOUR_WANDB_PROJECT --use_wandb
 
 # Fine-tuning (without WandB logging)
-CUDA_VISIBLE_DEVICES=1 python fam/llm/train.py --num_gpus 1 --batch_size 32 --per_gpu_batchsize 2 --max_epoch 5 --learning_rate 0.00005 --data_dir data --exp_name reazon_small_exp_finetuning --spkemb_dropout 0.1 --check_val_every_n_epoch 1 
+python fam/llm/train.py --num_gpus 1 --batch_size 32 --per_gpu_batchsize 2 --max_epoch 5 --learning_rate 0.00005 --data_dir data --exp_name reazon_small_exp_finetuning --spkemb_dropout 0.1 --check_val_every_n_epoch 1 
 
 # Training from scratch
 # Replace YOUR_WANDB_ENTITY and YOUR_WANDB_PROJECT
