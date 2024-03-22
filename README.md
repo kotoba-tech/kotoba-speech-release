@@ -1,6 +1,8 @@
 # Kotoba-Speech Version. 0.1
 Welcome to the code repository for Kotoba-Speech v0.1, a 1.2B Transformer-based speech generative model designed for generating fluent Japanese speech. This model represents one of the most advanced open-source options available in the field.
 
+Questions, feature requests, or bug reports? Join [our community](https://discord.com/invite/qPVFqhGN7Z)!
+
 <img src="assets/logo.png" width="300" height="300" alt="Kotoba-Speech Logo">
 
 ## About
