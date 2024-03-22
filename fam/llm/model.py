@@ -12,6 +12,7 @@ from torch.nn import functional as F
 from fam.llm.layers import Block, LayerNorm, RMSNorm
 from fam.llm.mixins import CausalInferenceMixin, NonCausalInferenceMixin
 
+from IPython import embed
 END_OF_TEXT_TOKEN = 1537
 
 
@@ -42,7 +43,8 @@ class GPTConfig:
     rmsnorm_eps: Optional[float] = None  # only used for rmsnorm
     nonlinearity_type: str = "gelu"  # "gelu" or "swiglu"
     swiglu_multiple_of: Optional[int] = None  # MLP hidden layer (using SwiGLU) will be multiple of this
-    attn_kernel_type: Literal["fa2", "torch_attn", "hand"] = "fa2"
+    attn_kernel_type: Literal["torch_attn"] = "torch_attn"
+    #Literal["fa2", "torch_attn", "hand"] = "fa2"
     kv_cache_enabled: bool = False  # whether to use key-value cache for attention
 
 
@@ -117,7 +119,7 @@ class GPT(nn.Module, NonCausalInferenceMixin, CausalInferenceMixin):
 
         self.transformer = nn.ModuleDict(
             dict(
-                wtes=nn.ModuleList([nn.Embedding(vsize, config.n_embd) for vsize in config.vocab_sizes]),
+                wtes=nn.ModuleList([nn.Embedding(vsize, config.n_embd,) for vsize in config.vocab_sizes]),
                 wpe=nn.Embedding(config.block_size, config.n_embd),
                 drop=nn.Dropout(config.dropout),
                 h=nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
@@ -125,7 +127,7 @@ class GPT(nn.Module, NonCausalInferenceMixin, CausalInferenceMixin):
             )
         )
         if speaker_emb_dim is not None:
-            self.speaker_cond_pos = nn.Linear(speaker_emb_dim, config.n_embd, bias=False)
+            self.speaker_cond_pos = nn.Linear(speaker_emb_dim, config.n_embd, bias=False) # ここで256->2048
 
         self.lm_heads = nn.ModuleList()
         if config.target_vocab_sizes is not None:
@@ -144,7 +146,78 @@ class GPT(nn.Module, NonCausalInferenceMixin, CausalInferenceMixin):
             assert len(self.lm_heads) == len(
                 self.transformer.wtes  # type: ignore
             ), f"Number of heads ({len(self.lm_heads)}) must match number of one-hot embedding matrics ({len(self.transformer.wtes)})."  # type: ignore
-
+        # - causal
+        # GPT(
+        # (transformer): ModuleDict(
+        #     (wtes): ModuleList(
+        #     (0): Embedding(2562, 2048)
+        #     )
+        #     (wpe): Embedding(2048, 2048)
+        #     (drop): Dropout(p=0.0, inplace=False)
+        #     (h): ModuleList(
+        #     (0-23): 24 x Block(
+        #         (ln_1): RMSNorm()
+        #         (ln_2): RMSNorm()
+        #         (attn): SelfAttention(
+        #         (c_attn): Linear(in_features=2048, out_features=6144, bias=False)
+        #         (c_proj): Linear(in_features=2048, out_features=2048, bias=False)
+        #         (resid_dropout): Dropout(p=0.0, inplace=False)
+        #         )
+        #         (mlp): MLP(
+        #         (swiglu): SwiGLU(
+        #             (w1): Linear(in_features=2048, out_features=5632, bias=False)
+        #             (w3): Linear(in_features=2048, out_features=5632, bias=False)
+        #         )
+        #         (c_proj): Linear(in_features=5632, out_features=2048, bias=False)
+        #         (dropout): Dropout(p=0.0, inplace=False)
+        #         )
+        #     )
+        #     )
+        #     (ln_f): RMSNorm()
+        # )
+        # (speaker_cond_pos): Linear(in_features=256, out_features=2048, bias=False)
+        # (lm_heads): ModuleList(
+        #     (0): Linear(in_features=2048, out_features=2562, bias=False)
+        # )
+        # )
+        # GPTConfig(block_size=2048, vocab_sizes=[2562], target_vocab_sizes=None, n_layer=24, n_head=16, n_embd=2048, dropout=0.0, spkemb_dropout=0.1, bias=False, causal=True, spk_emb_on_text=True, norm_type='rmsnorm', rmsnorm_eps=1e-05, nonlinearity_type='swiglu', swiglu_multiple_of=256, attn_kernel_type='torch_attn', kv_cache_enabled=False)
+        #
+        # - non causal
+        # GPT(
+        #   (transformer): ModuleDict(
+        #     (wtes): ModuleList(
+        #       (0): Embedding(1538, 384)
+        #       (1): Embedding(1025, 384)
+        #     )
+        #     (wpe): Embedding(1024, 384)
+        #     (drop): Dropout(p=0.0, inplace=False)
+        #     (h): ModuleList(
+        #       (0-5): 6 x Block(
+        #         (ln_1): LayerNorm()
+        #         (ln_2): LayerNorm()
+        #         (attn): SelfAttention(
+        #           (c_attn): Linear(in_features=384, out_features=1152, bias=False)
+        #           (c_proj): Linear(in_features=384, out_features=384, bias=False)
+        #           (resid_dropout): Dropout(p=0.0, inplace=False)
+        #         )
+        #         (mlp): MLP(
+        #           (c_fc): Linear(in_features=384, out_features=1536, bias=False)
+        #           (gelu): GELU(approximate='none')
+        #           (c_proj): Linear(in_features=1536, out_features=384, bias=False)
+        #           (dropout): Dropout(p=0.0, inplace=False)
+        #         )
+        #       )
+        #     )
+        #     (ln_f): LayerNorm()
+        #   )
+        #   (speaker_cond_pos): Linear(in_features=256, out_features=384, bias=False)
+        #   (lm_heads): ModuleList(
+        #     (0-5): 6 x Linear(in_features=384, out_features=1025, bias=False)
+        #   )
+        # )
+        # GPTConfig(block_size=1024, vocab_sizes=[1538, 1025], target_vocab_sizes=[1025, 1025, 1025, 1025, 1025, 1025], n_layer=6, n_head=6, n_embd=384, dropout=0.0, spkemb_dropout=0.0, bias=False, causal=False, spk_emb_on_text=True, norm_type='layernorm', rmsnorm_eps=None, nonlinearity_type='gelu', swiglu_multiple_of=None, attn_kernel_type='fa2', kv_cache_enabled=False)
+        # if config.causal is False:
+        #     embed()
         # init all weights
         self.apply(self._init_weights)
         # apply special scaled init to the residual projections, per GPT-2 paper
@@ -197,6 +270,7 @@ class GPT(nn.Module, NonCausalInferenceMixin, CausalInferenceMixin):
         idx,
         targets=None,
         speaker_embs=None,
+        embedding=None,
         speaker_emb_mask=None,
         loss_reduce: Literal["mean", "none"] = "mean",
     ):
@@ -222,17 +296,17 @@ class GPT(nn.Module, NonCausalInferenceMixin, CausalInferenceMixin):
                 self.kv_pos += 1
         else:
             pos = torch.arange(0, t, dtype=torch.long, device=device)  # shape (t)
-
-        # forward the GPT model itself
-        assert num_hierarchies == len(
-            self.transformer.wtes
-        ), f"Input tensor has {num_hierarchies} hierarchies, but model has {len(self.transformer.wtes)} set of input embeddings."
-
         # embed the tokens, positional encoding, and speaker embedding
         tok_emb = torch.zeros((b, t, self.config.n_embd), device=device)
         # ends up swapping (B, num_hierarchies, t) tokens -> (B, t, c) embeddings.
+        wte = self.transformer.wtes[0]
         for i, wte in enumerate(self.transformer.wtes):
-            tok_emb += wte(idx[:, i, :])
+            mask_pad = idx[:, i, :] == -1 
+            masked_idx = idx[:, i, :].clone()
+            masked_idx[mask_pad] = 0
+            embedded_idx = wte(masked_idx)
+            embedded_idx[mask_pad] = 0
+            tok_emb += embedded_idx
         pos_emb = self.transformer.wpe(pos)  # position embeddings of shape (t, n_embd)
 
         spk_emb = 0.0
@@ -241,7 +315,6 @@ class GPT(nn.Module, NonCausalInferenceMixin, CausalInferenceMixin):
                 assert speaker_emb_mask is None
                 assert self.training is False
                 assert self.spk_emb_on_text is True
-
                 spk_emb = []
                 for speaker_emb_row in speaker_embs:
                     if speaker_emb_row is not None:
@@ -276,6 +349,17 @@ class GPT(nn.Module, NonCausalInferenceMixin, CausalInferenceMixin):
             if self.spk_emb_on_text is False:
                 assert speaker_emb_mask is None, "Not implemented for spk_emb_on_text=False"
                 spk_emb = self._mask_spk_emb_on_text(idx, spk_emb)
+        elif embedding is not None:
+            speakers_embedded = self.speaker_cond_pos(embedding)
+
+            if self.training and self.config.spkemb_dropout > 0.0:
+                # Remove speaker conditioning at random.
+                dropout = torch.ones_like(speakers_embedded) * (
+                    torch.rand(speakers_embedded.shape[0], 1, 1, device=device) >= self.config.spkemb_dropout
+                )
+                spk_emb = torch.where(dropout == 0, torch.zeros_like(speakers_embedded), speakers_embedded)
+            else:
+                spk_emb = speakers_embedded
 
         x = self.transformer.drop(tok_emb + pos_emb + spk_emb)
         for block in self.transformer.h:
@@ -295,7 +379,6 @@ class GPT(nn.Module, NonCausalInferenceMixin, CausalInferenceMixin):
                 )
                 for i, logits in enumerate(list_logits)
             ]
-            # TODO: should we do this better without stack somehow?
             losses = torch.stack(losses)
             if loss_reduce == "mean":
                 losses = losses.mean()
@@ -307,6 +390,7 @@ class GPT(nn.Module, NonCausalInferenceMixin, CausalInferenceMixin):
                 list_logits = [
                     lm_head(x[:, [-1], :]) for lm_head in self.lm_heads
                 ]  # note: using list [-1] to preserve the time dim
+                # print(f'{len(list_logits)=}, {list_logits[0].shape=}')
             else:
                 list_logits = [lm_head(x) for lm_head in self.lm_heads]
             losses = None

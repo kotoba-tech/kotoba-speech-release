@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import tqdm
 from torch.nn import functional as F
-
+from IPython import embed
 
 def top_p_sample(prob_dist: torch.Tensor, top_p: float):
     sorted_probs, sorted_indices = torch.sort(prob_dist, descending=True, dim=-1)
@@ -85,7 +85,9 @@ class CausalInferenceMixin:
         list_logits, _ = self(
             idx_cond, speaker_embs=speaker_embs
         )  # list with len num_hierarchies of (b,1,vocab_size) tensors
-
+        # print(f'{list_logits[0].shape=}, {len(list_logits)=}')
+        # print(f'{list_logits[0][:,:,:10]}')
+        
         if guidance_scale is not None:
             assert idx_cond.shape[0] % 2 == 0
             assert list_logits[0].shape[0] % 2 == 0
@@ -112,10 +114,12 @@ class CausalInferenceMixin:
                 list_logits[i] = logits
 
         # apply softmax to convert logits to (normalized) probabilities
+        # embed()
         probs = [
             F.softmax(logits, dim=-1) for logits in list_logits
         ]  # list of len num_hierarchies of (b,vocab_size) tensors
-
+        # print(f'{probs[0].shape=}')
+        # print(f'{probs[0][:,:,:10]}')
         if top_p is not None:
             for i in range(len(probs)):
                 probs[i] = top_p_sample(probs[i], top_p)

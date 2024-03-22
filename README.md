@@ -1,22 +1,30 @@
-# MetaVoice-1B
+# Kotoba-Speech Version. 0.1
+Welcome to the code repository for Kotoba-Speech v0.1, a 1.2B Transformer-based speech generative model designed for generating fluent Japanese speech. This model represents one of the most advanced open-source options available in the field.
 
-MetaVoice-1B is a 1.2B parameter base model trained on 100K hours of speech for TTS (text-to-speech). It has been built with the following priorities:
-* **Emotional speech rhythm and tone** in English. No hallucinations.
-* **Zero-shot cloning for American & British voices**, with 30s reference audio.
-* Support for (cross-lingual) **voice cloning with finetuning**.
-  * We have had success with as little as 1 minute training data for Indian speakers.
-* Support for **long-form synthesis**.
+<img src="assets/logo.png" width="300" height="300" alt="Kotoba-Speech Logo">
 
-We’re releasing MetaVoice-1B under the Apache 2.0 license, *it can be used without restrictions*.
+## About
+Kotoba-Speech Version 0.1 distinguishes itself as an open-source solution for generating high-quality Japanese speech from text prompts, while also offering the capability for voice cloning through speech prompts.
 
-Try out the [demo](https://ttsdemo.themetavoice.xyz/)!
+| Sentence                | Amazon Poly      | Google Text-to-Speech    | Kotoba-Speech v0.1 | Kotoba-Speech v0.1 (Voice-Cloning) |
+|------------------------|-----------|-----------|-----------|-----------|
+| "コトバテクノロジーズのミッションは音声基盤モデルを作る事です。"       | [Download](assets/aws.wav)       | [Download](assets/google.wav)          | [Download](assets/kotoba.wav)            | [Download](assets/kotoba_cloning.wav)                |
 
-## Installation  
+- **Demo:** Experience Kotoba-Speech in action [here](https://huggingface.co/kotoba-tech/kotoba-speech-v0.1).
+- **Model Checkpoint:** Access our pre-trained model [here](https://huggingface.co/kotoba-tech/kotoba-speech-v0.1).　The model checkpoint is commercially usable.
+- **Open-sourced Code:** This repository opensources the training and inference code, along with the Gradio demo code. We borrow code from [MetaVoice](https://github.com/metavoiceio/metavoice-src) as a starting point.
 
-**Pre-requisites:** Python >=3.10,<3.12; GPU with >=24GB RAM.
+## Table of Contents
 
+1. **Installation**
+2. **Preparing Datasets**
+3. **Training** 
+4. **Inference**
+5. **Other Notes**
+
+## 1. Installation  
 ```bash
-# install ffmpeg
+# Installing ffmpeg
 wget https://johnvansickle.com/ffmpeg/builds/ffmpeg-git-amd64-static.tar.xz
 wget https://johnvansickle.com/ffmpeg/builds/ffmpeg-git-amd64-static.tar.xz.md5
 md5sum -c ffmpeg-git-amd64-static.tar.xz.md5
@@ -24,46 +32,75 @@ tar xvf ffmpeg-git-amd64-static.tar.xz
 sudo mv ffmpeg-git-*-static/ffprobe ffmpeg-git-*-static/ffmpeg /usr/local/bin/
 rm -rf ffmpeg-git-*
 
+# Setting-up Python virtual environment
+python -m venv myenv
+source myenv/bin/activate
+pip install -U --pre torch torchaudio --index-url https://download.pytorch.org/whl/nightly/cu121
 pip install -r requirements.txt
+pip install flash-attn==2.5.3
 pip install -e .
 ```
 
-## Usage
-1. Download it and use it anywhere (including locally) with our [reference implementation](/fam/llm/sample.py),
+## 2. Preparing Datasets
+We provide an example of preparing datasets to train our model. We use Reazon Speech, the largest open-sourced Japanese speech dataset, as an example. (Note that our model is not necessary trained on Reazon Speech solely.)
 ```bash
-python fam/llm/sample.py --huggingface_repo_id="metavoiceio/metavoice-1B-v0.1" --spk_cond_path="assets/bria.mp3"
+# Download & Format Data
+python preprocess/download_reazon.py
+
+# Pre-calculate Speaker Embeddings
+python preprocess/spk_embed.py
+
+# Tokenize Audio
+python preprocess/audio_tokenize.py
+
+# Tokenize Text Captions
+python preprocess/text_tokenize.py
+
+# Split data into (training/validation/test)
+python preprocess/split.py
 ```
 
-2. Deploy it on any cloud (AWS/GCP/Azure), using our [inference server](/fam/llm/serving.py)
+## 3. Training
 ```bash
-python fam/llm/serving.py --huggingface_repo_id="metavoiceio/metavoice-1B-v0.1"
+# Fine-tuning from our pre-trained checkpoint
+# Replace YOUR_WANDB_ENTITY and YOUR_WANDB_PROJECT
+CUDA_VISIBLE_DEVICES=1 python fam/llm/train.py --num_gpus 1 --batch_size 32 --per_gpu_batchsize 2 --max_epoch 5 --learning_rate 0.00005 --data_dir data --exp_name reazon_small_exp_finetuning --spkemb_dropout 0.1 --check_val_every_n_epoch 1 --wandb_entity YOUR_WANDB_ENTITY --wandb_project YOUR_WANDB_PROJECT --use_wandb
+
+# Multi-GPU Fine-tuning (e.g., using 2 GPUs)
+# Replace YOUR_WANDB_ENTITY and YOUR_WANDB_PROJECT
+python fam/llm/train.py --num_gpus 2 --batch_size 32 --per_gpu_batchsize 2 --max_epoch 5 --learning_rate 0.00005 --data_dir data --exp_name reazon_small_exp_finetuning --spkemb_dropout 0.1 --check_val_every_n_epoch 1 --wandb_entity YOUR_WANDB_ENTITY --wandb_project YOUR_WANDB_PROJECT --use_wandb
+
+# Fine-tuning (without WandB logging)
+CUDA_VISIBLE_DEVICES=1 python fam/llm/train.py --num_gpus 1 --batch_size 32 --per_gpu_batchsize 2 --max_epoch 5 --learning_rate 0.00005 --data_dir data --exp_name reazon_small_exp_finetuning --spkemb_dropout 0.1 --check_val_every_n_epoch 1 
+
+# Training from scratch
+# Replace YOUR_WANDB_ENTITY and YOUR_WANDB_PROJECT
+python fam/llm/train.py --num_gpus 1 --batch_size 64 --per_gpu_batchsize 2 --max_epoch 20 --learning_rate 0.0001 --data_dir data --exp_name reazon_small_exp --spkemb_dropout 0.1 --check_val_every_n_epoch 1 --wandb_entity YOUR_WANDB_ENTITY --wandb_project YOUR_WANDB_PROJECT --use_wandb --train_from_scratch
 ```
 
-3. Use it via [Hugging Face](https://huggingface.co/metavoiceio)
+## 4. Inference
+```bash
+# Our Pre-trained Checkpoint
+python -i fam/llm/fast_inference.py  --model_name kotoba-tech/kotoba-speech-v0.1
+tts.synthesise(text="コトバテクノロジーズのミッションは音声基盤モデルを作る事です。", spk_ref_path="assets/bria.mp3")
 
-## Soon
-- Long form TTS
-- Fine-tuning code
+# Inference from Our Pre-trained Checkpoint (関西弁)
+python -i fam/llm/fast_inference.py  --model_name kotoba-tech/kotoba-speech-v0.1-kansai  
+tts.synthesise(text="コトバテクノロジーズのミッションは音声基盤モデルを作る事です。", spk_ref_path="assets/bria.mp3")
 
-## Architecture
-We predict EnCodec tokens from text, and speaker information. This is then diffused up to the waveform level, with post-processing applied to clean up the audio.
+# Inference from Your Own Pre-trained Checkpoint
+# YOUR_CHECKPOINT_PATH is something like /home/checkpoints/epoch=0-step=1810.ckpt
+python -i fam/llm/fast_inference.py  --first_model_path YOUR_CHECKPOINT_PATH
+tts.synthesise(text="コトバテクノロジーズのミッションは音声基盤モデルを作る事です。", spk_ref_path="assets/bria.mp3")
+```
 
-* We use a causal GPT to predict the first two hierarchies of EnCodec tokens. Text and audio are part of the LLM context. Speaker information is passed via conditioning at the token embedding layer. This speaker conditioning is obtained from a separately trained speaker verification network.
-  - The two hierarchies are predicted in a "flattened interleaved" manner, we predict the first token of the first hierarchy, then the first token of the second hierarchy, then the second token of the first hierarchy, and so on.
-  - We use condition-free sampling to boost the cloning capability of the model.
-  - The text is tokenised using a custom trained BPE tokeniser with 512 tokens.
-  - Note that we've skipped predicting semantic tokens as done in other works, as we found that this isn't strictly necessary.
-* We use a non-causal (encoder-style) transformer to predict the rest of the 6 hierarchies from the first two hierarchies. This is a super small model (~10Mn parameters), and has extensive zero-shot generalisation to most speakers we've tried. Since it's non-causal, we're also able to predict all the timesteps in parallel.
-* We use multi-band diffusion to generate waveforms from the EnCodec tokens. We noticed that the speech is clearer than using the original RVQ decoder or VOCOS. However, the diffusion at waveform level leaves some background artifacts which are quite unpleasant to the ear. We clean this up in the next step.
-* We use DeepFilterNet to clear up the artifacts introduced by the multi-band diffusion. 
+## 5. Other notes
+## 5.1 Contribute
+- See all [active issues](https://github.com/kotoba-tech/kotoba-voice/issues)!
 
-## Optimizations
-The model supports: 
-1. KV-caching via Flash Decoding 
-2. Batching (including texts of different lengths)
+## 5.2 Enhancements
+- [ ] Write an explanation about multi-node training
+- [ ] Integrade a gradio demo
 
-## Contribute
-- See all [active issues](https://github.com/metavoiceio/metavoice-src/issues)!
-
-## Acknowledgements
-We are grateful to Together.ai for their 24/7 help in marshalling our cluster. We thank the teams of AWS, GCP & Hugging Face for support with their cloud platforms.
+## 5.3　Acknowledgements
+We thank [MetaVoice](https://github.com/metavoiceio/metavoice-src) for releasing their code and their English pre-trained model.

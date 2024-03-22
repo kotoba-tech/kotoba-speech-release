@@ -7,7 +7,7 @@ import requests
 import soundfile as sf
 
 API_SERVER_URL = "http://127.0.0.1:58003/tts"
-RADIO_CHOICES = ["Preset voices", "Upload target voice"]
+RADIO_CHOICES = ["Preset voices", "Upload target voice", "Record your voice"]
 MAX_CHARS = 220
 PRESET_VOICES = {
     # female
@@ -33,11 +33,6 @@ def _handle_edge_cases(to_say, upload_target):
     if not to_say:
         raise gr.Error("Please provide text to synthesise")
 
-    if len(to_say) > MAX_CHARS:
-        gr.Warning(
-            f"Max {MAX_CHARS} characters allowed. Provided: {len(to_say)} characters. Truncating and generating speech...Result at the end can be unstable as a result."
-        )
-
     def _check_file_size(path):
         if not path:
             return
@@ -51,7 +46,7 @@ def _handle_edge_cases(to_say, upload_target):
     _check_file_size(upload_target)
 
 
-def tts(to_say, top_p, guidance, toggle, preset_dropdown, upload_target):
+def tts(to_say, top_p, guidance, toggle, preset_dropdown, upload_target, record_target):
     d_top_p = denormalise_top_p(top_p)
     d_guidance = denormalise_guidance(guidance)
 
@@ -59,7 +54,11 @@ def tts(to_say, top_p, guidance, toggle, preset_dropdown, upload_target):
 
     to_say = to_say if len(to_say) < MAX_CHARS else to_say[:MAX_CHARS]
 
-    custom_target_path = upload_target if toggle == RADIO_CHOICES[1] else None
+    custom_target_path = None
+    if toggle == RADIO_CHOICES[1]:
+        custom_target_path = upload_target
+    elif toggle == RADIO_CHOICES[2]:
+        custom_target_path = record_target
 
     config = {
         "text": to_say,
@@ -87,34 +86,37 @@ def tts(to_say, top_p, guidance, toggle, preset_dropdown, upload_target):
 
 
 def change_voice_selection_layout(choice):
-    if choice == RADIO_CHOICES[0]:
-        return [gr.update(visible=True), gr.update(visible=False)]
+    index = RADIO_CHOICES.index(choice)
+    return [
+        gr.update(visible=True)
+        if i == index else gr.update(visible=False)
+        for i in range(len(RADIO_CHOICES))
+    ]
 
-    return [gr.update(visible=False), gr.update(visible=True)]
 
-
-title = """
-<picture>
-  <source srcset="https://cdn.themetavoice.xyz/banner_light_transparent.png" media="(prefers-color-scheme: dark)" />
-  <img alt="MetaVoice logo" src="https://cdn.themetavoice.xyz/banner_light_transparent.png" style="width: 20%; margin: 0 auto;" />
-</picture>
-
-\n# TTS by MetaVoice-1B
-"""
+title = "# TTS by Kotoba-Speech"
 
 description = """
-<strong>MetaVoice-1B</strong> is a 1.2B parameter base model for TTS (text-to-speech). It has been built with the following priorities:
+<strong>Kotoba-Speech v0.1</strong>は、1.2Bのトランスフォーマーに基づく音声生成モデルです。
+以下の機能をサポートしています：
 \n
-* <strong>Emotional speech rhythm and tone</strong> in English.
-* Support for <strong>voice cloning with finetuning</strong>.
-  * We have had success with as little as 1 minute training data for Indian speakers.
-* <strong>Zero-shot cloning for American & British voices</strong>, with 30s reference audio.
-* Support for <strong>long-form synthesis</strong>.
+* 日本語における滑らかなテキスト読み上げ生成
+* スピーチプロンプトを通じたOne-shot音声クローニング
 
-We are releasing the model under [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0). See [Github](https://github.com/metavoiceio/metavoice-src) for details and to contribute.
+Kotoba Technologiesは、公開されたモデルを商用可能なApache 2.0ライセンスで公開します。
+推論およびモデルコードは、Meta-Voiceをベースに作られており、学習コードは弊社のGitHubで近日中に公開する予定です。  
+Kotoba Technologiesは、音声基盤モデルの開発に取り組んでおり、今後もモデルの公開を行なっていきます。是非、[Discord Community](https://discord.gg/qPVFqhGN7Z)に参加してご意見ください！
+
+<strong>Kotoba-Speech v0.1</strong> is a 1.2B Transformer-based speech generative model. It supports the following properties:
+\n
+* Fluent text-to-speech generation in Japanese
+* One-shot voice cloning through speech prompt
+
+We are releasing our model under the Apache 2.0 license. Our inference and model code is adapted from Meta-Voice, and we will our training code on our GitHub repository shortly.  
+Kotoba Technologies is committing on developing speech foundation models, and we’ll continue releasing our models. Please join [our discord](https://discord.gg/qPVFqhGN7Z) to contribute to out community.
 """
 
-with gr.Blocks(title="TTS by MetaVoice") as demo:
+with gr.Blocks(title="TTS by Kotoba-Speech") as demo:
     gr.Markdown(title)
 
     with gr.Row():
@@ -123,10 +125,11 @@ with gr.Blocks(title="TTS by MetaVoice") as demo:
     with gr.Row():
         with gr.Column():
             to_say = gr.TextArea(
-                label=f"What should I say!? (max {MAX_CHARS} characters).",
+                label="What should I say!?",
                 lines=4,
-                value="This is a demo of text to speech by MetaVoice-1B, an open-source foundational audio model by MetaVoice.",
+                value="コトバテクノロジーズのミッションは、音声基盤モデルを作ることです。",
             )
+
             with gr.Row(), gr.Column():
                 # voice settings
                 top_p = gr.Slider(
@@ -159,30 +162,40 @@ with gr.Blocks(title="TTS by MetaVoice") as demo:
                 upload_target = gr.Audio(
                     sources=["upload"],
                     type="filepath",
-                    label="Upload a clean sample to clone. Sample should contain 1 speaker, be between 30-90 seconds and not contain background noise.",
+                    label="Upload a clean sample to clone. Sample should contain 1 speaker, be between 10-90 seconds and not contain background noise.",
+                    min_length=10,
+                    max_length=90,
+                )
+
+            with gr.Row(visible=False) as row_3:
+                record_target = gr.Audio(
+                    sources=["microphone"],
+                    type="filepath",
+                    label="Record your voice with a microphone to clone. Sample should contain 1 speaker, be between 10-90 seconds and not contain background noise.",
+                    min_length=10,
+                    max_length=90,
                 )
 
             toggle.change(
                 change_voice_selection_layout,
                 inputs=toggle,
-                outputs=[row_1, row_2],
+                outputs=[row_1, row_2, row_3],
             )
 
         with gr.Column():
             speech = gr.Audio(
                 type="numpy",
-                label="MetaVoice-1B says...",
+                label="Kotoba-Speech says...",
             )
 
     submit = gr.Button("Generate Speech")
     submit.click(
         fn=tts,
-        inputs=[to_say, top_p, guidance, toggle, preset_dropdown, upload_target],
+        inputs=[to_say, top_p, guidance, toggle, preset_dropdown, upload_target, record_target],
         outputs=speech,
     )
 
 
 demo.queue(default_concurrency_limit=2)
-demo.launch(
-    favicon_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets/favicon.ico"),
-)
+demo.launch()
+# demo.launch(server_name="0.0.0.0", server_port=3000, share=True)  # dev

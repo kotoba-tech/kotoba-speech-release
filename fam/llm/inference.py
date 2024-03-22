@@ -6,11 +6,11 @@ import pathlib
 import shutil
 import subprocess
 import tempfile
+import time
 from contextlib import nullcontext
-from dataclasses import dataclass, asdict
-from typing import List, Literal, Optional, Type, Union
+from dataclasses import dataclass
+from typing import List, Literal, Optional, Tuple, Type, Union
 
-import librosa
 import torch
 import tqdm
 import tqdm.contrib.concurrent
@@ -21,9 +21,10 @@ from fam.llm.adapters import FlattenedInterleavedEncodec2Codebook, TiltedEncodec
 from fam.llm.decoders import Decoder, EncodecDecoder
 from fam.llm.enhancers import BaseEnhancer, get_enhancer
 from fam.llm.model import GPT, GPTConfig
-from fam.llm.utils import normalize_text
+from fam.llm.utils import check_audio_file, get_default_dtype, normalize_text
 from fam.quantiser.audio.speaker_encoder.model import SpeakerEncoder
 from fam.quantiser.text.tokenise import TrainedBPETokeniser
+
 
 @dataclass
 class InferenceConfig:
@@ -46,18 +47,13 @@ class InferenceConfig:
 
 
 class Model:
-    """
-    Class to sample from a trained model.
-    """
-
     def __init__(
         self,
         config: InferenceConfig,
         tokenizer_cls: Type[TrainedBPETokeniser],
         decoder_cls: Type[Decoder],
         data_adapter_fn,
-        use_kv_cache: Optional[Literal["none", "flash_decoding", "vanilla"]] = None,
-        first_model_path = None
+        use_kv_cache: Optional[Literal["vanilla"]] = None,
     ):
         # TODO: disentangle the encodec stuff and numbers etc with rest of this code (esp at encoder-only / second stage model inference)
         # TODO: remove magic number
@@ -71,14 +67,14 @@ class Model:
         torch.backends.cuda.matmul.allow_tf32 = True if config.dtype != "float32" else False  # allow tf32 on matmul
         torch.backends.cudnn.allow_tf32 = True if config.dtype != "float32" else False  # allow tf32 on cudnn
         device_type = "cuda" if "cuda" in config.device else "cpu"  # for later use in torch.autocast
-        ptdtype = {
+        self.ptdtype = {
             "float32": torch.float32,
             "tfloat32": torch.float32,
             "bfloat16": torch.bfloat16,
             "float16": torch.float16,
         }[config.dtype]
         self._ctx = (
-            nullcontext() if device_type == "cpu" else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
+            nullcontext() if device_type == "cpu" else torch.amp.autocast(device_type=device_type, dtype=self.ptdtype)
         )
 
         self.use_bpe_tokenizer = False
@@ -89,7 +85,6 @@ class Model:
         self.checkpoint_config = None
         self.vocab_sizes = None
         self.smodel = None
-        self.first_model_path = first_model_path
 
         self._init_model()
 
@@ -126,39 +121,16 @@ class Model:
             if "causal" in self.checkpoint_config and self.checkpoint_config["causal"] is False:
                 self._encodec_ctx_window = model_args["block_size"]
 
-            for key in asdict(self.config):
-                if key in model_args:
-                    print("Overwriting {} in model_args".format(key))
-                    model_args[key] = asdict(self.config)[key]
-
             gptconf = GPTConfig(**model_args)
 
             # TODO: rename `speaker_emb_dim` to `speaker_emb_size`.
             self.model = GPT(gptconf, speaker_emb_dim=speaker_emb_size if self.speaker_cond else None)
-            if not getattr(self.config, 'train_from_scratch', False):
-                state_dict = checkpoint["model"]
-                unwanted_prefix = "_orig_mod."
-                for k, v in list(state_dict.items()):
-                    if k.startswith(unwanted_prefix):
-                        state_dict[k[len(unwanted_prefix) :]] = state_dict.pop(k)
-                    if 'first_stage_model_transformer.' in k:
-                        state_dict[k.replace('first_stage_model_transformer.', '')] = state_dict.pop(k)
-                self.model.load_state_dict(state_dict)
-            else:
-                print("training a model from scratch!!")
-
-            if self.first_model_path is not None:
-                if self.checkpoint_config.get("causal", True):
-                    new_dict = {}
-                    torch_data = torch.load(self.first_model_path)
-                    if 'state_dict' in torch_data.keys():
-                        state_dict = torch_data['state_dict']
-                    else:
-                        state_dict = torch_data['model']
-                    for key, val in state_dict.items():
-                        if 'first_stage_model_transformer' in key:
-                            new_dict[key.replace('first_stage_model_transformer.', '')] = val
-                    self.model.load_state_dict(new_dict)
+            state_dict = checkpoint["model"]
+            unwanted_prefix = "_orig_mod."
+            for k, v in list(state_dict.items()):
+                if k.startswith(unwanted_prefix):
+                    state_dict[k[len(unwanted_prefix) :]] = state_dict.pop(k)
+            self.model.load_state_dict(state_dict)
 
         # model
         self.model.eval()
@@ -174,16 +146,7 @@ class Model:
             if "causal" in self.checkpoint_config and self.checkpoint_config["causal"] is False:
                 raise Exception("kv_cache not supported for non-causal models!")
 
-            if self.use_kv_cache == "flash_decoding":
-                self.model.enable_kv_cache()
-                for block in self.model.transformer.h:
-                    block.attn.attn_kernel_type = "fd"
-            elif self.use_kv_cache == "vanilla":
-                for block in self.model.transformer.h:
-                    if block.attn.attn_kernel_type != "fa2":
-                        raise Exception(
-                            f"kv_cache only supported for flash attention 2 but found {block.attn.attn_kernel_type} inside model!"
-                        )
+            if self.use_kv_cache == "vanilla":
                 self.model.enable_kv_cache()
             else:
                 raise NotImplementedError(f"kv_cache type {self.use_kv_cache} not implemented!")
@@ -269,6 +232,9 @@ class Model:
                         speaker_embs=speaker_embs,
                         batch_size=batch_size,
                         guidance_scale=guidance_scale,
+                        dtype=self.ptdtype,
+                        end_of_audio_token=self.tokenizer.offset - 1,
+                        end_of_text_token=self.tokenizer.eot_token,
                     )
                     for i in range(len(y)):
                         to_return.append(self.decoder.decode(tokens=y[i].tolist(), causal=True))
@@ -310,7 +276,6 @@ class Model:
             # TODO: refactor and merge with code in processing.py
             text_tokens = encoded_text  # (t,)
 
-            # print(f'{encodec_tokens[0].shape=}, {len(encodec_tokens)}')
             hierarchies_in = []
             hierarchies_in.append(text_tokens + encodec_token[0] + [self._encodec_codes_pad_token])
             hierarchies_in.append(
@@ -444,11 +409,6 @@ def get_cached_file(file_or_uri: str):
             cache_path = file_or_uri
         else:
             raise FileNotFoundError(f"File {file_or_uri} not found!")
-
-    # check audio file is at min. 30s in length
-    audio, sr = librosa.load(cache_path)
-    #assert librosa.get_duration(y=audio, sr=sr) >= 30, "Speaker reference audio file needs to be >= 30s in duration."
-
     return cache_path
 
 
@@ -480,7 +440,7 @@ def _sample_utterance_batch(
     enhancer: Optional[Union[Literal["df"], BaseEnhancer]],
     first_stage_ckpt_path: str,
     second_stage_ckpt_path: str,
-    guidance_scale: Optional[float],
+    guidance_scale: Optional[Tuple[float, float]],
     max_new_tokens: int,
     top_k: Optional[int],
     top_p: Optional[float],
@@ -503,6 +463,8 @@ def _sample_utterance_batch(
         speaker_embs.append(get_cached_embedding(spk_cond_path, spkemb_model) if spk_cond_path else None)
 
     b_speaker_embs = torch.cat(speaker_embs, dim=0)
+
+    start = time.time()
     b_tokens = first_stage_model(
         texts=texts,
         speaker_embs=b_speaker_embs,
@@ -546,6 +508,8 @@ def _sample_utterance_batch(
                 first_stage_ckpt_path,
                 second_stage_ckpt_path,
             )
+
+    print(f"time_to_synth_s: {time.time() - start}")
     return [str(w) + ".wav" if not str(w).endswith(".wav") else str(w) for w in wav_files]
 
 
@@ -558,7 +522,7 @@ def sample_utterance(
     enhancer: Optional[Union[Literal["df"], BaseEnhancer]],
     first_stage_ckpt_path: str,
     second_stage_ckpt_path: str,
-    guidance_scale: Optional[float],
+    guidance_scale: Optional[Tuple[float, float]],
     max_new_tokens: int,
     top_k: Optional[int],
     top_p: Optional[float],
@@ -590,8 +554,10 @@ def sample_utterance(
     )[0]
 
 
-def build_models(config_first_stage, config_second_stage, device, use_kv_cache, first_model_path=None):
-    smodel = SpeakerEncoder(device=device, eval=True, verbose=False)
+def build_models(config_first_stage, config_second_stage, model_dir, device, use_kv_cache):
+    smodel = SpeakerEncoder(
+        weights_fpath=os.path.join(model_dir, "speaker_encoder.pt"), device=device, eval=True, verbose=False
+    )
     data_adapter = FlattenedInterleavedEncodec2Codebook(end_of_audio_token=1024)
     llm_first_stage = Model(
         config_first_stage,
@@ -599,7 +565,6 @@ def build_models(config_first_stage, config_second_stage, device, use_kv_cache, 
         EncodecDecoder,
         data_adapter_fn=data_adapter.decode,
         use_kv_cache=use_kv_cache,
-        first_model_path=first_model_path,
     )
     data_adapter_second_stage = TiltedEncodec(end_of_audio_token=1024)
     llm_second_stage = Model(
@@ -620,12 +585,15 @@ def get_second_stage_path(model_dir: str):
 
 @dataclass
 class SamplingControllerConfig:
-
-    huggingface_repo_id: str
-    """Absolute path to the model directory."""
+    """
+    Sample from a trained model.
+    """
 
     spk_cond_path: str
     """Path to speaker reference file. Min. 30s of audio required. Supports both local paths & public URIs. Audio formats: wav, flac & mp3"""
+
+    huggingface_repo_id: str = "kotoba-tech/kotoba-speech-v0.1"
+    """Absolute path to the model directory."""
 
     text: str = (
         "This is a demo of text to speech by Kotoba Speech Version 0.1, an open-source Speech foundational audio model by Kotoba Technologies."
@@ -653,7 +621,7 @@ class SamplingControllerConfig:
     device: Literal["cuda", "cpu"] = "cuda"
     """Device to use for sampling."""
 
-    dtype: Literal["bfloat16", "float16", "float32", "tfloat32"] = "bfloat16"
+    dtype: Literal["bfloat16", "float16", "float32", "tfloat32"] = get_default_dtype()
     """Data type to use for sampling."""
 
     compile: bool = False
@@ -665,31 +633,27 @@ class SamplingControllerConfig:
     init_from: str = "resume"
     """Either 'resume' (from an out_dir) or a gpt2 variant (e.g. 'gpt2-xl')."""
 
-    use_kv_cache: Optional[Literal["flash_decoding", "vanilla"]] = None
-    """Type of kv caching to use for inference: 1) [none] no kv caching, 2) [flash_decoding] use the 
-    flash decoding kernel, 3) [vanilla] use flash attention 2 with hand implemented kv-cache."""
+    use_kv_cache: Optional[Literal["vanilla"]] = "vanilla"
+    """Type of kv caching to use for inference: 1) [none] no kv caching, 2) [vanilla] use torch attention with hand implemented kv-cache."""
 
     output_dir: str = "samples/"
     """Relative path to output directory"""
 
-    guidance_scale: Optional[float] = 3.0
-    """Guidance scale for sampling."""
+    guidance_scale: Optional[Tuple[float, float]] = (3.0, 1.0)
+    """Guidance scale for sampling: (speaker conditioning guidance_scale, prompt conditioning guidance scale)."""
 
     batch_size: int = 128
     """Batch size to use for sampling. Note that the batch size gets doubled when guidance is used. For H100, and 1B model, 
     1 w/ guidance and 1 w/o guidance work well (without kv-caching). With kv-caching, 128 (w/o guidance) and
     64 (w/ guidance) works well."""
-    """
-    Sample from a trained model.
-    """
-    first_model_path: str = None
-    """first model path"""
-
 
 
 if __name__ == "__main__":
     # TODO: add support for batch sampling via CLI. Function has been implemented above.
     sampling_config = tyro.cli(SamplingControllerConfig, use_underscores=True)
+
+    check_audio_file(sampling_config.spk_cond_path)
+
     model_dir = snapshot_download(repo_id=sampling_config.huggingface_repo_id)
     first_stage_ckpt_path = get_first_stage_path(model_dir)
     second_stage_ckpt_path = get_second_stage_path(model_dir)
@@ -722,10 +686,13 @@ if __name__ == "__main__":
 
     # define models
     smodel, llm_first_stage, llm_second_stage = build_models(
-        config_first_stage, config_second_stage, sampling_config.device, sampling_config.use_kv_cache, sampling_config.first_model_path,
+        config_first_stage,
+        config_second_stage,
+        model_dir=model_dir,
+        device=sampling_config.device,
+        use_kv_cache=sampling_config.use_kv_cache,
     )
 
-    print(f"Synthesising utterance...")
     sample_utterance(
         sampling_config.text,
         os.path.expanduser(sampling_config.spk_cond_path),

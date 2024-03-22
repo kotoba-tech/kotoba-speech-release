@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import shlex
 import subprocess
 import tempfile
@@ -22,8 +23,9 @@ from fam.llm.sample import (
     build_models,
     get_first_stage_path,
     get_second_stage_path,
-    sample_utterance,
+    # sample_utterance,
 )
+from fam.llm.fast_inference import TTS
 
 logger = logging.getLogger(__name__)
 
@@ -60,15 +62,11 @@ class ServingConfig:
 
 # Singleton
 class _GlobalState:
-    spkemb_model: torch.nn.Module
-    first_stage_model: Model
-    second_stage_model: Model
     config: ServingConfig
-    enhancer: object
+    tts: TTS
 
 
 GlobalState = _GlobalState()
-
 
 @dataclass(frozen=True)
 class TTSRequest:
@@ -77,6 +75,24 @@ class TTSRequest:
     top_p: Optional[float] = 0.95
     speaker_ref_path: Optional[str] = None
     top_k: Optional[int] = None
+
+
+def sample_utterance(
+    text: str,
+    spk_cond_path: str | None,
+    guidance_scale,
+    max_new_tokens,
+    top_k,
+    top_p,
+    temperature,
+) -> str:
+    return GlobalState.tts.synthesise(
+        text,
+        spk_cond_path,
+        top_p=top_p,
+        guidance_scale=guidance_scale,
+        temperature=temperature,
+    )
 
 
 @app.post("/tts", response_class=Response)
@@ -98,12 +114,6 @@ async def text_to_speech(req: Request):
             wav_out_path = sample_utterance(
                 tts_req.text,
                 wav_path,
-                GlobalState.spkemb_model,
-                GlobalState.first_stage_model,
-                GlobalState.second_stage_model,
-                enhancer=GlobalState.enhancer,
-                first_stage_ckpt_path=None,
-                second_stage_ckpt_path=None,
                 guidance_scale=tts_req.guidance,
                 max_new_tokens=GlobalState.config.max_new_tokens,
                 temperature=GlobalState.config.temperature,
@@ -176,11 +186,7 @@ if __name__ == "__main__":
         **common_config,
     )
 
-    spkemb, llm_stg1, llm_stg2 = build_models(config1, config2, device=device, use_kv_cache="flash_decoding")
-    GlobalState.spkemb_model = spkemb
-    GlobalState.first_stage_model = llm_stg1
-    GlobalState.second_stage_model = llm_stg2
-    GlobalState.enhancer = get_enhancer(GlobalState.config.enhancer)
+    GlobalState.tts = TTS()
 
     # start server
     uvicorn.run(

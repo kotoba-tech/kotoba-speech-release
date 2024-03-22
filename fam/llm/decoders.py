@@ -9,6 +9,7 @@ import torch
 from audiocraft.data.audio import audio_read, audio_write
 from audiocraft.models import MultiBandDiffusion  # type: ignore
 
+from IPython import embed
 
 class Decoder(ABC):
     @abstractmethod
@@ -58,7 +59,6 @@ class EncodecDecoder(Decoder):
         wav = wav.to("cuda")
         tokens = self.mbd.codec_model.encode(wav)
         tokens = tokens[0][0]
-
         return tokens.tolist()
 
     def decode(
@@ -80,6 +80,7 @@ class EncodecDecoder(Decoder):
             return tokens
         else:
             with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
+                # embed()
                 wav = self.mbd.tokens_to_wav(tokens)
             # NOTE: we couldn't just return wav here as it goes through loudness compression etc :)
 

@@ -119,6 +119,5 @@ class SpeakerEncoder(nn.Module):
     def embed_utterance_from_file(self, fpath: str, numpy: bool) -> torch.Tensor:
         wav_tgt, _ = librosa.load(fpath, sr=16000)
         wav_tgt, _ = librosa.effects.trim(wav_tgt, top_db=20)
-
         embedding = self.embed_utterance(wav_tgt, numpy=numpy)
         return embedding
