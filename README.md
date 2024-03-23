@@ -1,20 +1,22 @@
 # Kotoba-Speech Version. 0.1
 Welcome to the code repository for Kotoba-Speech v0.1, a 1.2B Transformer-based speech generative model designed for generating fluent Japanese speech. This model represents one of the most advanced open-source options available in the field.
 
-Questions, feature requests, or bug reports? Join [our community](https://discord.com/invite/qPVFqhGN7Z)!
+Questions, feature requests, or bug reports? Join [our Discord community](https://discord.com/invite/qPVFqhGN7Z)!
 
 <img src="assets/logo.png" width="300" height="300" alt="Kotoba-Speech Logo">
 
 ## About
 Kotoba-Speech Version 0.1 distinguishes itself as an open-source solution for generating high-quality Japanese speech from text prompts, while also offering the capability for voice cloning through speech prompts.
 
-| Sentence                | Amazon Poly      | Google Text-to-Speech    | Kotoba-Speech v0.1 | Kotoba-Speech v0.1 (Voice-Cloning) |
-|------------------------|-----------|-----------|-----------|-----------|
-| "コトバテクノロジーズのミッションは音声基盤モデルを作る事です。"       | [Download](assets/aws.wav)       | [Download](assets/google.wav)          | [Download](assets/kotoba.wav)            | [Download](assets/kotoba_cloning.wav)                |
+- **_Demo:_** Experience Kotoba-Speech in action [here](https://huggingface.co/kotoba-tech/kotoba-speech-v0.1).
+- **_Model Checkpoint:_** Access our commercially usable pre-trained model [here](https://huggingface.co/kotoba-tech/kotoba-speech-v0.1).
+- **_Open-sourced Code:_** This repository opensources the training and inference code, along with the Gradio demo code. We borrow code from [MetaVoice](https://github.com/metavoiceio/metavoice-src) as a starting point.
 
-- **Demo:** Experience Kotoba-Speech in action [here](https://huggingface.co/kotoba-tech/kotoba-speech-v0.1).
-- **Model Checkpoint:** Access our pre-trained model [here](https://huggingface.co/kotoba-tech/kotoba-speech-v0.1).　The model checkpoint is commercially usable.
-- **Open-sourced Code:** This repository opensources the training and inference code, along with the Gradio demo code. We borrow code from [MetaVoice](https://github.com/metavoiceio/metavoice-src) as a starting point.
+### Our Model vs. Leading TTS Providers for Japanese
+https://github.com/kotoba-tech/kotoba-speech-release/assets/18011504/516f56f4-db92-45cb-b2e5-92863b36f8cd
+
+### Fine-tuning Our Pre-trained Model for 関西弁
+https://github.com/kotoba-tech/kotoba-speech-release/assets/18011504/0204938e-7bb2-4c9f-9c6b-cb1e5c2dcff4
 
 ## Table of Contents
 
