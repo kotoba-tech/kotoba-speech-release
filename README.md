@@ -8,7 +8,7 @@ Questions, feature requests, or bug reports? Join [our Discord community](https:
 ## About
 Kotoba-Speech Version 0.1 distinguishes itself as an open-source solution for generating high-quality Japanese speech from text prompts, while also offering the capability for voice cloning through speech prompts.
 
-- **_Demo:_** Experience Kotoba-Speech in action [here](https://huggingface.co/kotoba-tech/kotoba-speech-v0.1).
+- **_Demo:_** Experience Kotoba-Speech in action [here](https://huggingface.co/spaces/kotoba-tech/Kotoba-Speech).
 - **_Model Checkpoint:_** Access our commercially usable pre-trained model [here](https://huggingface.co/kotoba-tech/kotoba-speech-v0.1).
 - **_Open-sourced Code:_** This repository opensources the training and inference code, along with the Gradio demo code. We borrow code from [MetaVoice](https://github.com/metavoiceio/metavoice-src) as a starting point.
 
