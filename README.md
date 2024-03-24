@@ -100,7 +100,7 @@ tts.synthesise(text="コトバテクノロジーズのミッションは音声�
 
 ## 5. Other notes
 ## 5.1 Contribute
-- See all [active issues](https://github.com/kotoba-tech/kotoba-voice/issues)!
+- See all [active issues](https://github.com/kotoba-tech/kotoba-speech-release/issues)!
 
 ## 5.2 Enhancements
 - [ ] Write an explanation about multi-node training
