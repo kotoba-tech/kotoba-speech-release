@@ -39,9 +39,9 @@ rm -rf ffmpeg-git-*
 # Setting-up Python virtual environment
 python -m venv myenv
 source myenv/bin/activate
-pip install -U --pre torch torchaudio --index-url https://download.pytorch.org/whl/nightly/cu121
 pip install -r requirements.txt
-pip install flash-attn==2.5.3
+pip install -U torch==2.2.0 torchaudio==2.2.0 xformers==0.0.24 --index-url https://download.pytorch.org/whl/cu121
+# you may see a dependency error about audiocraft requiring torch==2.1.0; this is safe to ignore, the model will run fine
 pip install -e .
 ```
 
