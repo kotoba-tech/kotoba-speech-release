@@ -112,8 +112,8 @@ Kotoba Technologiesは、音声基盤モデルの開発に取り組んでおり�
 * Fluent text-to-speech generation in Japanese
 * One-shot voice cloning through speech prompt
 
-We are releasing our model under the Apache 2.0 license. Our inference and model code is adapted from Meta-Voice, and we will our training code on our GitHub repository shortly.  
-Kotoba Technologies is committing on developing speech foundation models, and we’ll continue releasing our models. Please join [our discord](https://discord.gg/qPVFqhGN7Z) to contribute to out community.
+We are releasing our model under the Apache 2.0 license. Our inference and model code is adapted from Meta-Voice, and we will release our training code on our GitHub repository shortly.  
+Kotoba Technologies is committing on developing speech foundation models, and we’ll continue releasing our models. Please join [our discord](https://discord.gg/qPVFqhGN7Z) to contribute to our community.
 """
 
 with gr.Blocks(title="TTS by Kotoba-Speech") as demo:
